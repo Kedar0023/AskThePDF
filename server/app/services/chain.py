@@ -12,10 +12,10 @@ def format_docs(docs):
 
 def get_rag_chain():
     """
-    Build and return a RAG chain:
+    Build and return a RAG chain that accepts chat_history:
       1. Retriever fetches relevant chunks from ChromaDB
       2. Chunks are formatted into a context string
-      3. Prompt template slots in context + user question
+      3. Prompt template slots in context + chat_history + user question
       4. LLM generates the answer
       5. Output parser extracts the string response
     """
@@ -23,10 +23,9 @@ def get_rag_chain():
     model = get_model()
 
     rag_chain = (
-        {
-            "context": retriever | format_docs,
-            "question": RunnablePassthrough(),
-        }
+        RunnablePassthrough.assign(
+            context=lambda x: format_docs(retriever.invoke(x["question"]))
+        )
         | sysPrompt
         | model
         | StrOutputParser()

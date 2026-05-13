@@ -15,5 +15,6 @@ dependencies = [
     "load-dotenv>=0.1.0",
     "pydantic>=2.13.4",
     "pypdf>=6.11.0",
+    "sentence-transformers>=5.5.0",
     "tiktoken>=0.12.0",
 ]

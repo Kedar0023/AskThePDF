@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, File, UploadFile, HTTPException
 
 from app.models.user import ChatRequest, ChatResponse, SourceDocument
-from app.services.embedding import store_pdf_embeddings
+from app.services.embedding import store_pdf_embeddings, get_chroma_client
 from app.services.chain import get_rag_chain
 from app.services.retriever import get_retriever
 
@@ -17,7 +17,13 @@ router = APIRouter()
 UPLOAD_DIR = "./uploads"
 
 
+# ─── In-memory chat history store (keyed by session_id) ───────────────────────
+
+_chat_histories: dict[str, list] = {}
+
+
 # ─── PDF Upload ────────────────────────────────────────────────────────────────
+
 
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -57,18 +63,34 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 # ─── Chat (RAG) ───────────────────────────────────────────────────────────────
 
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(data: ChatRequest):
     """
     Send a question and get an answer grounded in the uploaded PDF(s).
     Uses the RAG chain: retriever → prompt → LLM → answer.
+    Previous chat messages are passed as context for multi-turn conversation.
     """
+    session_id = data.session_id or str(uuid.uuid4())
+
+    # Retrieve chat history for this session
+    chat_history = _chat_histories.get(session_id, [])
+
     try:
         rag_chain = get_rag_chain()
-        answer = rag_chain.invoke(data.message)
+        answer = rag_chain.invoke({
+            "question": data.message,
+            "chat_history": chat_history,
+        })
     except Exception as e:
         logger.error("RAG chain error: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to generate answer: {e}")
+
+    # Append this exchange to the session's chat history
+    from langchain_core.messages import HumanMessage, AIMessage
+    chat_history.append(HumanMessage(content=data.message))
+    chat_history.append(AIMessage(content=answer))
+    _chat_histories[session_id] = chat_history
 
     # Also retrieve the source documents for transparency
     try:
@@ -85,8 +107,6 @@ async def chat(data: ChatRequest):
     except Exception:
         sources = []
 
-    session_id = data.session_id or str(uuid.uuid4())
-
     return ChatResponse(
         answer=answer,
         session_id=session_id,
@@ -94,7 +114,37 @@ async def chat(data: ChatRequest):
     )
 
 
+# ─── Clear (wipe uploads + vector DB + chat history on exit) ──────────────────
+
+
+@router.delete("/clear")
+async def clear_vectorstore():
+    """
+    Delete all embedded documents from ChromaDB, remove uploaded files,
+    and clear chat history. Call this when the user exits the platform.
+    """
+    # 1. Reset ChromaDB (drops all collections)
+    try:
+        client = get_chroma_client()
+        client.reset()
+    except Exception as e:
+        logger.error("Failed to clear ChromaDB: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to clear vector store: {e}")
+
+    # 2. Remove uploaded files
+    if os.path.exists(UPLOAD_DIR):
+        shutil.rmtree(UPLOAD_DIR)
+        logger.info("Uploads directory cleared.")
+
+    # 3. Clear all chat histories
+    _chat_histories.clear()
+    logger.info("Chat histories cleared.")
+
+    return {"message": "Vector store, uploads, and chat history cleared successfully."}
+
+
 # ─── Health ────────────────────────────────────────────────────────────────────
+
 
 @router.get("/health")
 async def health():

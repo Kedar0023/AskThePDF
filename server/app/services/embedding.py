@@ -8,7 +8,6 @@ CHROMA_DB_DIR = "./vector_store"
 
 
 def store_pdf_embeddings(file_path: str):
-
     documents = load_pdf_documents(file_path)
 
     # embedding model
@@ -16,11 +15,14 @@ def store_pdf_embeddings(file_path: str):
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
-
     vector_store = Chroma.from_documents(
-        documents=documents,
-        embedding=embeddings,
-        persist_directory=CHROMA_DB_DIR
+        documents=documents, embedding=embeddings, persist_directory=CHROMA_DB_DIR
     )
 
     return vector_store
+
+
+def get_chroma_client():
+    """Return the underlying ChromaDB persistent client."""
+    import chromadb
+    return chromadb.PersistentClient(path=CHROMA_DB_DIR)
