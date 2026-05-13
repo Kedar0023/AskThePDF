@@ -1,0 +1,17 @@
+{
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/.venv": true,
+        "**/__pycache__": true,
+        // "**/pyproject.toml":true,
+        "**/.python-version": true,
+
+    },
+    "python.defaultInterpreterPath": "./server/.venv/bin/python",
+    "python.analysis.extraPaths": ["."]
+
+}
